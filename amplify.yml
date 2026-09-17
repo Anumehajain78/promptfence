@@ -1,18 +1,18 @@
 version: 1
-# Monorepo: the Next.js app lives in frontend/. Commands use --prefix so they
-# work from the repo root regardless of whether `cd` persists between commands.
-frontend:
-  phases:
-    preBuild:
-      commands:
-        - npm ci --prefix frontend
-    build:
-      commands:
-        - npm run build --prefix frontend
-  artifacts:
-    baseDirectory: frontend/out
-    files:
-      - "**/*"
-  cache:
-    paths:
-      - frontend/node_modules/**/*
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: out
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
