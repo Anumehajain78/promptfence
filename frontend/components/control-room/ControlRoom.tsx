@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { REFUND_CEILING } from "@/lib/api";
 import { DecisionPanel } from "./DecisionPanel";
 import { ErrorLine } from "./ErrorLine";
@@ -29,6 +30,20 @@ export function ControlRoom() {
   const total = last ? last.session_total_after : 0;
   const agent = rows[0]?.agent ?? "support-agent";
   const locked = busy !== "idle" || loading;
+
+  // Landing page links here with ?attack=1: start the attack once the session has loaded,
+  // and drop the param so a reload does not re-run it.
+  const autoStarted = useRef(false);
+  const { sessionId, runAttack } = room;
+  useEffect(() => {
+    if (autoStarted.current || loading || !sessionId || busy !== "idle") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("attack") !== "1") return;
+    autoStarted.current = true;
+    url.searchParams.delete("attack");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    runAttack();
+  }, [busy, loading, runAttack, sessionId]);
 
   return (
     <div className="grid min-h-[640px] grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-x-hidden lg:h-screen lg:overflow-hidden">
