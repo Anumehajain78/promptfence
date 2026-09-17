@@ -36,10 +36,12 @@ Policy name: cumulative-refund-ceiling-v1.
   the sample agent. Region: ap-south-1 unless backend/README.md says otherwise.
 - frontend/: Next.js 15 (App Router), TypeScript, Tailwind, static export
   (output: 'export'), deployed on Amplify Hosting from main.
-  Fonts: Instrument Serif (display), IBM Plex Sans (body), JetBrains Mono (data).
-  Palette: paper #FBF9F5, ink #16161A, muted #6B6B73, rule #DDD8CE,
-  panel #F3EFE7, accent #C2410C, allow #2F7A4E, hold #B07503, deny #B4232B,
-  terminal #1B1B20. No gradients, no shadows, no rounded corners >2px, no icons.
+  Fonts: Geist for readable text, Geist Mono only for values and identifiers.
+  Sentence case throughout.
+  Palette: paper #F7F8F4, ink #141413, greys #3B3E38 #6E726A #8A8E84 #A6AA9F
+  #C2C5BC #D6D9CF #E6E8E0, allow #128A60/#18B981, lime #B8F227/#C9F94F,
+  amber #9A6B00/#F3B83F, deny #D93636/#FF4D4D, clay #D97757.
+  No gradients, no shadows, no rounded corners >2px, no icons.
 - design/: reference exports from Claude Design. Match them; don't invent new UI.
 
 ## Data model (DynamoDB)

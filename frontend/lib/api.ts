@@ -1,3 +1,5 @@
+import { inr } from "./format";
+
 export type Decision = "ALLOW" | "DENY" | "APPROVAL";
 
 export type PolicyId =
@@ -9,6 +11,12 @@ export type PolicyId =
   | "forbid-intern-export"
   | "no-matching-policy";
 
+export const AGENTS = ["support-agent", "finance-agent", "intern-agent"] as const;
+export const ACTIONS = ["refund", "delete_customer", "export_customer_data"] as const;
+export const REFUND_CEILING = 355000;
+
+// --- Shapes: match backend/src/authorize/app.py exactly --------------------
+
 export interface AuthorizeRequest {
   agent: string;
   session: string;
@@ -17,66 +25,140 @@ export interface AuthorizeRequest {
   amount?: number;
 }
 
-// Matches backend/src/authorize/app.py exactly.
 export interface AuthorizeResponse {
   decision: Decision;
   reason: string;
   policy: PolicyId;
   // The session's running refund total BEFORE this request.
   session_total: number;
-  // 50000 for refund actions, otherwise null.
+  // 355000 for refund actions, otherwise null.
   ceiling: number | null;
+  // null when the backend runs without its ledger tables.
+  seq: number | null;
+  ts: string;
 }
 
-// Thrown for any non-2xx response. status 400 carries the backend's readable message.
-export class AuthorizeError extends Error {
+export interface AttackRunRequest {
+  agent?: string;
+  session?: string;
+  count?: number;
+  amount?: number;
+}
+
+export interface AttackRunResult {
+  seq: number | null;
+  decision: Decision;
+  policy: PolicyId;
+  session_total_after: number;
+}
+
+export interface AttackRunResponse {
+  session_id: string;
+  results: AttackRunResult[];
+  first_denied_seq: number | null;
+}
+
+// One item of GET /v1/sessions/{id} → decisions.
+export interface DecisionRecord {
+  session_id: string;
+  seq: number | null;
+  agent: string;
+  action: string;
+  resource: string;
+  amount: number;
+  decision: Decision;
+  policy: PolicyId;
+  reason: string;
+  session_total_before: number;
+  session_total_after: number;
+  ts: string;
+}
+
+export interface SessionResponse {
+  session_id: string;
+  agent: string;
+  running_refund_total: number;
+  ceiling: number;
+  allowed: number;
+  held: number;
+  denied: number;
+  decisions: DecisionRecord[];
+}
+
+// Any non-2xx. message is the API's {error} verbatim when it sent one.
+export class ApiError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {
     super(message);
-    this.name = "AuthorizeError";
+    this.name = "ApiError";
     this.status = status;
   }
 }
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+export const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/+$/, "");
 
-export async function authorize(request: AuthorizeRequest): Promise<AuthorizeResponse> {
-  if (USE_MOCK) return mockAuthorize(request);
+// --- Real client -------------------------------------------------------------
 
+async function request<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   if (!API_BASE) {
-    throw new Error("NEXT_PUBLIC_API_BASE is not set. Set it, or set NEXT_PUBLIC_USE_MOCK=true.");
+    throw new ApiError(0, "NEXT_PUBLIC_API_BASE is not set. Set it, or set NEXT_PUBLIC_USE_MOCK=true.");
   }
 
-  const res = await fetch(`${API_BASE}/v1/authorize`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-
-  let body: unknown = null;
+  let res: Response;
   try {
-    body = await res.json();
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, `Could not reach the API at ${API_BASE}.`);
+  }
+
+  if (res.status === 204) return undefined as T;
+
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
   } catch {
     // Non-JSON response; handled below.
   }
 
   if (!res.ok) {
     const message =
-      body && typeof body === "object" && "error" in body
-        ? String((body as { error: unknown }).error)
+      payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
         : `Request failed with status ${res.status}.`;
-    throw new AuthorizeError(res.status, message);
+    throw new ApiError(res.status, message);
   }
+  return payload as T;
+}
 
-  return body as AuthorizeResponse;
+const sessionPath = (id: string) => `/v1/sessions/${encodeURIComponent(id)}`;
+
+export function authorize(req: AuthorizeRequest): Promise<AuthorizeResponse> {
+  return USE_MOCK ? mockAuthorize(req) : request("POST", "/v1/authorize", req);
+}
+
+// The real endpoint returns every result at once; the UI paces the reveal.
+export function attackRun(req: AttackRunRequest = {}): Promise<AttackRunResponse> {
+  return request("POST", "/v1/attack-run", req);
+}
+
+export function getSession(id: string): Promise<SessionResponse> {
+  return USE_MOCK ? mockGetSession(id) : request("GET", sessionPath(id));
+}
+
+export function resetSession(id: string): Promise<void> {
+  return USE_MOCK ? mockResetSession(id) : request("DELETE", sessionPath(id));
 }
 
 // ---------------------------------------------------------------------------
 // Mock: a local mirror of backend/policies/*.cedar and the handler's contract,
-// for building UI without the backend. Same validation messages, policy ids,
-// reasons and response shape. The real decision always comes from Cedar.
+// including the session ledger. Same validation messages, policy ids, reasons
+// and response shapes. The real decision always comes from Cedar.
 // ---------------------------------------------------------------------------
 
 type Role = "support" | "finance" | "intern";
@@ -88,9 +170,10 @@ const MOCK_AGENT_ROLES: Record<string, Role> = {
 };
 
 const REQUIRED_STRING_FIELDS = ["agent", "session", "action", "resource"] as const;
-const KNOWN_ACTIONS = ["refund", "delete_customer", "export_customer_data"];
-const REFUND_CEILING = 50000;
 const MAX_AMOUNT = 1_000_000_000_000;
+const ATTACK_RUN_MAX_COUNT = 100;
+const MOCK_LATENCY_MS = 150;
+const MOCK_ATTACK_INTERVAL_MS = 120;
 
 interface MockContext {
   role: Role;
@@ -104,23 +187,6 @@ interface MockPolicy {
   effect: "permit" | "forbid";
   matches: (c: MockContext) => boolean;
   reason: (c: MockContext) => string;
-}
-
-// Indian digit grouping: 100000 → ₹1,00,000 (same as backend _inr).
-function inr(value: number): string {
-  let digits = String(Math.trunc(value));
-  if (digits.length > 3) {
-    let head = digits.slice(0, -3);
-    const tail = digits.slice(-3);
-    const groups: string[] = [];
-    while (head.length > 2) {
-      groups.unshift(head.slice(-2));
-      head = head.slice(0, -2);
-    }
-    if (head) groups.unshift(head);
-    digits = [...groups, tail].join(",");
-  }
-  return `₹${digits}`;
 }
 
 const MOCK_POLICIES: MockPolicy[] = [
@@ -165,25 +231,31 @@ const MOCK_POLICIES: MockPolicy[] = [
   },
 ];
 
-// session id → running refund total. Only ALLOWed refunds count; APPROVAL
-// does not add until a human approves. (Backend ledger writes: next branch.)
-const sessionTotals = new Map<string, number>();
-
-export function getMockSessionTotal(session: string): number {
-  return sessionTotals.get(session) ?? 0;
+interface MockSession {
+  agent_id: string;
+  seq: number;
+  running_refund_total: number;
+  allowed: number;
+  held: number;
+  denied: number;
+  decisions: DecisionRecord[];
 }
 
-export function resetMockSessions(): void {
-  sessionTotals.clear();
-}
+const mockSessions = new Map<string, MockSession>();
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function badRequest(message: string): never {
-  throw new AuthorizeError(400, message);
+  throw new ApiError(400, message);
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 // Same checks, order and messages as validate() + validate_for_cedar() + unknown agent in app.py.
-function validateMockRequest(request: AuthorizeRequest): Role {
-  const body = request as unknown as Record<string, unknown>;
+function validateMockRequest(req: AuthorizeRequest): Role {
+  const body = req as unknown as Record<string, unknown>;
 
   const missing = REQUIRED_STRING_FIELDS.filter((f) => body[f] === undefined || body[f] === null);
   if (missing.length) badRequest(`Missing required field(s): ${missing.join(", ")}.`);
@@ -208,8 +280,8 @@ function validateMockRequest(request: AuthorizeRequest): Role {
   }
 
   const action = body.action as string;
-  if (!KNOWN_ACTIONS.includes(action)) {
-    badRequest(`Unknown action '${action}'. Supported actions: ${KNOWN_ACTIONS.join(", ")}.`);
+  if (!(ACTIONS as readonly string[]).includes(action)) {
+    badRequest(`Unknown action '${action}'. Supported actions: ${ACTIONS.join(", ")}.`);
   }
   if (hasAmount) {
     if (!Number.isInteger(amount)) {
@@ -224,18 +296,13 @@ function validateMockRequest(request: AuthorizeRequest): Role {
   return role;
 }
 
-export async function mockAuthorize(request: AuthorizeRequest): Promise<AuthorizeResponse> {
-  // Simulated latency so loading states are visible while building the UI.
-  await new Promise((resolve) => setTimeout(resolve, 150));
-
-  const role = validateMockRequest(request);
-  const { session, action } = request;
-  const context: MockContext = {
-    role,
-    action,
-    amount: request.amount ?? 0,
-    session_total: getMockSessionTotal(session),
-  };
+// Synchronous core shared by mockAuthorize and mockAttackRun. Records the decision.
+function mockDecide(req: AuthorizeRequest): DecisionRecord {
+  const role = validateMockRequest(req);
+  const { session, action } = req;
+  const amount = req.amount ?? 0;
+  const ledger = mockSessions.get(session);
+  const context: MockContext = { role, action, amount, session_total: ledger?.running_refund_total ?? 0 };
 
   const matched = MOCK_POLICIES.filter((p) => p.matches(context));
   const byId = (a: MockPolicy, b: MockPolicy) => (a.id < b.id ? -1 : 1);
@@ -262,15 +329,98 @@ export async function mockAuthorize(request: AuthorizeRequest): Promise<Authoriz
     ];
   }
 
-  if (decision === "ALLOW" && action === "refund") {
-    sessionTotals.set(session, context.session_total + context.amount);
-  }
-
-  return {
-    decision,
-    reason,
-    policy,
-    session_total: context.session_total,
-    ceiling: action === "refund" ? REFUND_CEILING : null,
+  const refundAdded = decision === "ALLOW" && action === "refund" ? amount : 0;
+  const s: MockSession = ledger ?? {
+    agent_id: req.agent,
+    seq: 0,
+    running_refund_total: 0,
+    allowed: 0,
+    held: 0,
+    denied: 0,
+    decisions: [],
   };
+  s.seq += 1;
+  s.running_refund_total += refundAdded;
+  if (decision === "ALLOW") s.allowed += 1;
+  else if (decision === "APPROVAL") s.held += 1;
+  else s.denied += 1;
+
+  const record: DecisionRecord = {
+    session_id: session,
+    seq: s.seq,
+    agent: req.agent,
+    action,
+    resource: req.resource,
+    amount,
+    decision,
+    policy,
+    reason,
+    session_total_before: context.session_total,
+    session_total_after: context.session_total + refundAdded,
+    ts: nowIso(),
+  };
+  s.decisions.push(record);
+  mockSessions.set(session, s);
+  return record;
+}
+
+export async function mockAuthorize(req: AuthorizeRequest): Promise<AuthorizeResponse> {
+  // Simulated latency so loading states are visible while building the UI.
+  await sleep(MOCK_LATENCY_MS);
+  const r = mockDecide(req);
+  return {
+    decision: r.decision,
+    reason: r.reason,
+    policy: r.policy,
+    session_total: r.session_total_before,
+    ceiling: r.action === "refund" ? REFUND_CEILING : null,
+    seq: r.seq,
+    ts: r.ts,
+  };
+}
+
+function randomHex(bytes: number): string {
+  return Array.from({ length: bytes * 2 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+}
+
+// Yields one decision at a time (~120ms apart) so the UI can animate rows
+// arriving. Each item is a full DecisionRecord, which includes every
+// AttackRunResult field. Stops after the first DENY, like the backend.
+export async function* mockAttackRun({
+  agent = "support-agent",
+  session = `attack-${randomHex(4)}`,
+  count = 40,
+  amount = 9000,
+}: AttackRunRequest = {}): AsyncGenerator<DecisionRecord> {
+  if (typeof count !== "number" || !Number.isInteger(count)) badRequest("Field 'count' must be a whole number, e.g. 40.");
+  if (count < 1) badRequest("Field 'count' must be at least 1.");
+  if (count > ATTACK_RUN_MAX_COUNT) badRequest(`Field 'count' must not exceed ${ATTACK_RUN_MAX_COUNT}.`);
+
+  for (let i = 1; i <= count; i++) {
+    await sleep(MOCK_ATTACK_INTERVAL_MS);
+    const record = mockDecide({ agent, session, action: "refund", resource: `order-${4400 + i}`, amount });
+    yield record;
+    if (record.decision === "DENY") return;
+  }
+}
+
+export async function mockGetSession(id: string): Promise<SessionResponse> {
+  await sleep(MOCK_LATENCY_MS);
+  const s = mockSessions.get(id);
+  if (!s) throw new ApiError(404, `Session '${id}' not found.`);
+  return {
+    session_id: id,
+    agent: s.agent_id,
+    running_refund_total: s.running_refund_total,
+    ceiling: REFUND_CEILING,
+    allowed: s.allowed,
+    held: s.held,
+    denied: s.denied,
+    decisions: s.decisions.map((d) => ({ ...d })),
+  };
+}
+
+export async function mockResetSession(id: string): Promise<void> {
+  await sleep(MOCK_LATENCY_MS);
+  mockSessions.delete(id);
 }
