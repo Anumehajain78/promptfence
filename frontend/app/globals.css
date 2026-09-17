@@ -32,7 +32,8 @@
   }
 }
 
-/* The only motion in the Control Room: row slide-in, total interpolation + shake, chart step draw. */
+/* Reduced motion turns off every animation and transition: Control Room rows, total, chart;
+   landing reveals and paths. JS-driven motion (stream, totals, sequence) checks the same query. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -40,5 +41,6 @@
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
 }
