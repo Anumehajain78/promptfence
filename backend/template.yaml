@@ -25,8 +25,13 @@ Resources:
 
   AuthorizeFunction:
     Type: AWS::Serverless::Function
+    # Built by the Makefile (build-AuthorizeFunction) so policies/ ships with
+    # the handler. Alternative: copy policies into src/authorize/ and use the
+    # default python_pip builder.
+    Metadata:
+      BuildMethod: makefile
     Properties:
-      CodeUri: src/authorize/
+      CodeUri: .
       Handler: app.handler
       Environment:
         Variables:

@@ -1,16 +1,21 @@
 # Policies
 
-Placeholder. The Cedar files (`*.cedar`) and schema land here next.
-Six policies, no more. Precedence when several match: DENY > APPROVAL > ALLOW.
-Anything no policy permits is denied (Cedar default-deny).
+Six Cedar policies, one per file, each named after its `@id`. Schema:
+`schema.cedarschema` (principal `Agent` with `role`, resource `Order`,
+context `amount` and `session_total`, both whole rupees).
 
-| # | Policy id (proposed)            | Plain English                                                                 | Decision |
-|---|---------------------------------|-------------------------------------------------------------------------------|----------|
-| 1 | support-refund-limit-v1         | A support agent may refund up to ₹10,000 in a single call.                    | ALLOW    |
-| 2 | support-refund-approval-v1      | A support agent refund above ₹10,000 in a single call needs a human.          | APPROVAL |
-| 3 | cumulative-refund-ceiling-v1    | A support agent may not push the session's refund total above ₹50,000.        | DENY     |
-| 4 | support-delete-customer-v1      | A support agent may never delete a customer.                                  | DENY     |
-| 5 | finance-refund-limit-v1         | A finance agent may refund up to ₹100,000 in a single call.                   | ALLOW    |
-| 6 | intern-export-customer-data-v1  | An intern agent may never export customer data.                               | DENY     |
+Cedar's rules decide: any forbid beats any permit, and no matching permit
+means deny. Python never overrides that; it only maps Cedar's answer to
+ALLOW / APPROVAL / DENY (see `../README.md`).
 
-Policy 3 is evaluated against the session ledger: `running_refund_total + amount > 50000`.
+| Policy id                    | Plain English                                                         | Result   |
+|------------------------------|-----------------------------------------------------------------------|----------|
+| allow-support-refund-small   | Support may refund up to ₹10,000 in a single call.                    | ALLOW    |
+| hold-support-refund-large    | Support refunds above ₹10,000 need a human (`@decision("APPROVAL")`). | APPROVAL |
+| cumulative-refund-ceiling-v1 | Support may not push the session's refund total above ₹50,000.        | DENY     |
+| forbid-support-delete        | Support may never delete a customer.                                  | DENY     |
+| allow-finance-refund         | Finance may refund up to ₹1,00,000 in a single call.                  | ALLOW    |
+| forbid-intern-export         | Interns may never export customer data.                               | DENY     |
+
+`cumulative-refund-ceiling-v1` uses the session ledger:
+`context.session_total + context.amount > 50000`.
