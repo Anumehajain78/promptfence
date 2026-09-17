@@ -8,6 +8,7 @@ import app
 
 def call(body):
     event = {
+        "routeKey": "POST /v1/authorize",
         "requestContext": {"http": {"method": "POST"}},
         "body": body if isinstance(body, str) or body is None else json.dumps(body),
     }
@@ -31,8 +32,11 @@ def test_support_refund_small_allows():
     assert body["decision"] == "ALLOW"
     assert body["policy"] == "allow-support-refund-small"
     assert body["session_total"] == 0
-    assert body["ceiling"] == 50000
+    assert body["ceiling"] == 355000
     assert body["reason"]
+    # Stateless fallback: nothing recorded, so no seq; ts is always set.
+    assert body["seq"] is None
+    assert body["ts"].endswith("Z")
     assert headers["Access-Control-Allow-Origin"] == "*"
 
 
@@ -44,24 +48,35 @@ def test_support_refund_large_needs_approval():
 
 
 def test_session_ceiling_denies_small_refund(monkeypatch):
-    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "45000")
+    # 40th refund of 9000: 351000 + 9000 = 360000 > 355000.
+    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "351000")
     status, body, _ = call(request(amount=9000))
     assert status == 200
     assert body["decision"] == "DENY"
     assert body["policy"] == "cumulative-refund-ceiling-v1"
-    assert body["session_total"] == 45000
+    assert body["session_total"] == 351000
+
+
+def test_session_ceiling_allows_39th_refund(monkeypatch):
+    # 39th refund of 9000: 342000 + 9000 = 351000 <= 355000.
+    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "342000")
+    status, body, _ = call(request(amount=9000))
+    assert status == 200
+    assert body["decision"] == "ALLOW"
+    assert body["policy"] == "allow-support-refund-small"
 
 
 def test_session_ceiling_boundary_is_inclusive(monkeypatch):
-    # 41000 + 9000 = 50000 is not above the ceiling.
-    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "41000")
+    # 346000 + 9000 = 355000 is not above the ceiling.
+    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "346000")
     status, body, _ = call(request(amount=9000))
     assert status == 200
     assert body["decision"] == "ALLOW"
 
 
 def test_ceiling_forbid_beats_approval_permit(monkeypatch):
-    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "20000")
+    # 320000 + 42000 = 362000 > 355000: the forbid beats the APPROVAL permit.
+    monkeypatch.setenv("SESSION_TOTAL_OVERRIDE", "320000")
     status, body, _ = call(request(amount=42000))
     assert body["decision"] == "DENY"
     assert body["policy"] == "cumulative-refund-ceiling-v1"
@@ -173,6 +188,7 @@ def test_bad_body(raw):
 
 def test_base64_encoded_body():
     event = {
+        "routeKey": "POST /v1/authorize",
         "requestContext": {"http": {"method": "POST"}},
         "isBase64Encoded": True,
         "body": base64.b64encode(json.dumps(request(amount=5000)).encode()).decode(),
@@ -180,3 +196,17 @@ def test_base64_encoded_body():
     response = app.handler(event, None)
     assert response["statusCode"] == 200
     assert json.loads(response["body"])["decision"] == "ALLOW"
+
+
+def test_unknown_route_is_404():
+    response = app.handler({"routeKey": "GET /v1/nope", "requestContext": {"http": {"method": "GET"}}}, None)
+    assert response["statusCode"] == 404
+    assert "No route" in json.loads(response["body"])["error"]
+
+
+def test_sessions_routes_need_ledger_configured():
+    event = {"routeKey": "GET /v1/sessions/{id}", "pathParameters": {"id": "s1"},
+             "requestContext": {"http": {"method": "GET"}}}
+    response = app.handler(event, None)
+    assert response["statusCode"] == 503
+    assert "not configured" in json.loads(response["body"])["error"]

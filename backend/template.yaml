@@ -5,7 +5,9 @@ Description: PromptFence — permission gate for AI agents (Cedar + session ledg
 Globals:
   Function:
     Runtime: python3.11
-    Timeout: 10
+    # attack-run makes ~40 sequential ledger writes in one request; HTTP API
+    # integrations time out at 30 s.
+    Timeout: 29
     MemorySize: 256
 
 Resources:
@@ -18,6 +20,7 @@ Resources:
         AllowMethods:
           - GET
           - POST
+          - DELETE
           - OPTIONS
         AllowHeaders:
           - Content-Type
@@ -40,7 +43,7 @@ Resources:
           DECISIONS_TABLE: !Ref DecisionsTable
           EVENT_BUS_NAME: !Ref PromptFenceBus
       Policies:
-        - DynamoDBReadPolicy:
+        - DynamoDBCrudPolicy:
             TableName: !Ref AgentsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SessionsTable
@@ -54,6 +57,24 @@ Resources:
           Properties:
             ApiId: !Ref PromptFenceApi
             Path: /v1/authorize
+            Method: POST
+        GetSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PromptFenceApi
+            Path: /v1/sessions/{id}
+            Method: GET
+        DeleteSession:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PromptFenceApi
+            Path: /v1/sessions/{id}
+            Method: DELETE
+        AttackRun:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PromptFenceApi
+            Path: /v1/attack-run
             Method: POST
 
   AgentsTable:
@@ -105,3 +126,12 @@ Outputs:
   ApiBaseUrl:
     Description: Base URL of the PromptFence HTTP API (set as NEXT_PUBLIC_API_BASE).
     Value: !Sub "https://${PromptFenceApi}.execute-api.${AWS::Region}.amazonaws.com"
+  AgentsTableName:
+    Description: Agents table (used by `make seed`).
+    Value: !Ref AgentsTable
+  SessionsTableName:
+    Value: !Ref SessionsTable
+  DecisionsTableName:
+    Value: !Ref DecisionsTable
+  EventBusName:
+    Value: !Ref PromptFenceBus

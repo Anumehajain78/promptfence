@@ -1,0 +1,8 @@
+{
+  "AuthorizeFunction": {
+    "AGENTS_TABLE": "",
+    "SESSIONS_TABLE": "",
+    "DECISIONS_TABLE": "",
+    "EVENT_BUS_NAME": ""
+  }
+}

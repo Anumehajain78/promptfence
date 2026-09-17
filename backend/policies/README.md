@@ -12,10 +12,11 @@ ALLOW / APPROVAL / DENY (see `../README.md`).
 |------------------------------|-----------------------------------------------------------------------|----------|
 | allow-support-refund-small   | Support may refund up to ₹10,000 in a single call.                    | ALLOW    |
 | hold-support-refund-large    | Support refunds above ₹10,000 need a human (`@decision("APPROVAL")`). | APPROVAL |
-| cumulative-refund-ceiling-v1 | Support may not push the session's refund total above ₹50,000.        | DENY     |
+| cumulative-refund-ceiling-v1 | Support may not push the session's refund total above ₹3,55,000.      | DENY     |
 | forbid-support-delete        | Support may never delete a customer.                                  | DENY     |
 | allow-finance-refund         | Finance may refund up to ₹1,00,000 in a single call.                  | ALLOW    |
 | forbid-intern-export         | Interns may never export customer data.                               | DENY     |
 
 `cumulative-refund-ceiling-v1` uses the session ledger:
-`context.session_total + context.amount > 50000`.
+`context.session_total + context.amount > 355000`. With ₹9,000 refunds,
+requests 1–39 are allowed (₹3,51,000) and #40 is denied (₹3,60,000).
