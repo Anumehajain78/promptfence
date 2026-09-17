@@ -103,3 +103,4 @@ curl -s -X DELETE "$API/v1/sessions/demo-1"
 `make seed` reads the table name from `AGENTS_TABLE`, or from the
 `AgentsTableName` output of stack `promptfence` (override with
 `STACK_NAME=...`). Re-running it rotates the API keys.
+BEDROCK_MODEL_ID=apac.amazon.nova-lite-v1:0
