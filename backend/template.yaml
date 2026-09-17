@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: PromptFence — permission gate for AI agents (Cedar + session ledger).
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+  PromptFenceApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+
+  AuthorizeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/authorize/
+      Handler: app.handler
+      Environment:
+        Variables:
+          AGENTS_TABLE: !Ref AgentsTable
+          SESSIONS_TABLE: !Ref SessionsTable
+          DECISIONS_TABLE: !Ref DecisionsTable
+          EVENT_BUS_NAME: !Ref PromptFenceBus
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AgentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DecisionsTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref PromptFenceBus
+      Events:
+        Authorize:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PromptFenceApi
+            Path: /v1/authorize
+            Method: POST
+
+  AgentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-agents"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: agent_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: agent_id
+          KeyType: HASH
+
+  SessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-sessions"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+
+  DecisionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-decisions"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: seq
+          AttributeType: N
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+        - AttributeName: seq
+          KeyType: RANGE
+
+  PromptFenceBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: promptfence-bus
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL of the PromptFence HTTP API (set as NEXT_PUBLIC_API_BASE).
+    Value: !Sub "https://${PromptFenceApi}.execute-api.${AWS::Region}.amazonaws.com"
