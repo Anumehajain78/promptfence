@@ -1,5 +1,5 @@
 @id("cumulative-refund-ceiling-v1")
-// Support agents may not push the session's refund total above ₹50,000.
+// Support agents may not push the session's refund total above ₹3,55,000.
 forbid (
   principal is Agent,
   action == Action::"refund",
@@ -7,5 +7,5 @@ forbid (
 )
 when {
   principal.role == "support" &&
-  context.session_total + context.amount > 50000
+  context.session_total + context.amount > 355000
 };
