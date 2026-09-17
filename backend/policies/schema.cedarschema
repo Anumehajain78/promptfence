@@ -1,0 +1,17 @@
+// PromptFence Cedar schema. amount and session_total are whole rupees.
+entity Agent {
+  role: String,
+};
+
+entity Order;
+
+type AuthorizeContext = {
+  amount: Long,
+  session_total: Long,
+};
+
+action refund, delete_customer, export_customer_data appliesTo {
+  principal: Agent,
+  resource: Order,
+  context: AuthorizeContext,
+};
