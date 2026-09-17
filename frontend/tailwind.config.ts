@@ -5,21 +5,44 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        paper: "#FBF9F5",
-        ink: "#16161A",
-        muted: "#6B6B73",
-        rule: "#DDD8CE",
-        panel: "#F3EFE7",
-        accent: "#C2410C",
-        allow: "#2F7A4E",
-        hold: "#B07503",
-        deny: "#B4232B",
-        terminal: "#1B1B20",
+        paper: "#F7F8F4",
+        ink: "#141413",
+        grey: {
+          700: "#3B3E38", // body
+          500: "#6E726A", // labels
+          400: "#8A8E84", // chart steps, secondary display
+          300: "#A6AA9F",
+          250: "#C2C5BC",
+          200: "#D6D9CF", // hairline
+          100: "#E6E8E0", // row rule
+        },
+        // Control Room surface tints from the design spec sheet (not in the landing palette).
+        tint: {
+          DEFAULT: "#EEF0EA", // table header, skeleton, chip hover
+          alt: "#F2F3EE", // alternate row
+          hover: "#E8EAE2", // row hover
+        },
+        allow: { DEFAULT: "#128A60", fill: "#18B981" }, // DEFAULT = text (4.5:1 on paper)
+        lime: { DEFAULT: "#B8F227", hover: "#C9F94F" },
+        amber: { DEFAULT: "#9A6B00", fill: "#F3B83F" },
+        deny: { DEFAULT: "#D93636", fill: "#FF4D4D" },
+        clay: "#D97757",
       },
       fontFamily: {
-        display: ["var(--font-instrument-serif)", "Georgia", "serif"],
-        sans: ["var(--font-ibm-plex-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-jetbrains-mono)", "ui-monospace", "monospace"],
+        sans: ["var(--font-geist)", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
+      },
+      keyframes: {
+        "pf-row": { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "none" } },
+        "pf-shake": {
+          "0%, 100%": { transform: "translateX(0)" },
+          "25%": { transform: "translateX(-2px)" },
+          "75%": { transform: "translateX(2px)" },
+        },
+      },
+      animation: {
+        "pf-row": "pf-row 200ms ease both",
+        "pf-shake": "pf-shake 150ms linear 1",
       },
     },
     // Design rules: no rounded corners > 2px, no shadows.
