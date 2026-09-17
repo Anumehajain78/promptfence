@@ -1,5 +1,14 @@
 export type Decision = "ALLOW" | "DENY" | "APPROVAL";
 
+export type PolicyId =
+  | "allow-support-refund-small"
+  | "hold-support-refund-large"
+  | "cumulative-refund-ceiling-v1"
+  | "forbid-support-delete"
+  | "allow-finance-refund"
+  | "forbid-intern-export"
+  | "no-matching-policy";
+
 export interface AuthorizeRequest {
   agent: string;
   session: string;
@@ -8,13 +17,26 @@ export interface AuthorizeRequest {
   amount?: number;
 }
 
+// Matches backend/src/authorize/app.py exactly.
 export interface AuthorizeResponse {
   decision: Decision;
   reason: string;
-  policy: string;
-  // Not returned by the backend skeleton yet; the mock fills it so the
-  // dashboard's running total can be built. Backend should add it.
-  session_total?: number;
+  policy: PolicyId;
+  // The session's running refund total BEFORE this request.
+  session_total: number;
+  // 50000 for refund actions, otherwise null.
+  ceiling: number | null;
+}
+
+// Thrown for any non-2xx response. status 400 carries the backend's readable message.
+export class AuthorizeError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "AuthorizeError";
+    this.status = status;
+  }
 }
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
@@ -45,39 +67,107 @@ export async function authorize(request: AuthorizeRequest): Promise<AuthorizeRes
       body && typeof body === "object" && "error" in body
         ? String((body as { error: unknown }).error)
         : `Request failed with status ${res.status}.`;
-    throw new Error(message);
+    throw new AuthorizeError(res.status, message);
   }
 
   return body as AuthorizeResponse;
 }
 
 // ---------------------------------------------------------------------------
-// Mock: the six policies applied locally, for building UI before the backend.
-// Mirrors Cedar semantics: default deny, and DENY > APPROVAL > ALLOW when
-// several policies match. The real decision always comes from Cedar.
+// Mock: a local mirror of backend/policies/*.cedar and the handler's contract,
+// for building UI without the backend. Same validation messages, policy ids,
+// reasons and response shape. The real decision always comes from Cedar.
 // ---------------------------------------------------------------------------
 
 type Role = "support" | "finance" | "intern";
 
-// Demo agent ids → role. An agent id that is itself a role name also works.
 const MOCK_AGENT_ROLES: Record<string, Role> = {
-  "support-bot": "support",
-  "finance-bot": "finance",
-  "intern-bot": "intern",
+  "support-agent": "support",
+  "finance-agent": "finance",
+  "intern-agent": "intern",
 };
 
-const PER_CALL_SUPPORT_LIMIT = 10_000;
-const SESSION_SUPPORT_CEILING = 50_000;
-const PER_CALL_FINANCE_LIMIT = 100_000;
+const REQUIRED_STRING_FIELDS = ["agent", "session", "action", "resource"] as const;
+const KNOWN_ACTIONS = ["refund", "delete_customer", "export_customer_data"];
+const REFUND_CEILING = 50000;
+const MAX_AMOUNT = 1_000_000_000_000;
 
-// session id → running refund total (only ALLOWed refunds count).
-const sessionTotals = new Map<string, number>();
-
-function roleOf(agent: string): Role | undefined {
-  if (agent in MOCK_AGENT_ROLES) return MOCK_AGENT_ROLES[agent];
-  if (agent === "support" || agent === "finance" || agent === "intern") return agent;
-  return undefined;
+interface MockContext {
+  role: Role;
+  action: string;
+  amount: number;
+  session_total: number;
 }
+
+interface MockPolicy {
+  id: Exclude<PolicyId, "no-matching-policy">;
+  effect: "permit" | "forbid";
+  matches: (c: MockContext) => boolean;
+  reason: (c: MockContext) => string;
+}
+
+// Indian digit grouping: 100000 → ₹1,00,000 (same as backend _inr).
+function inr(value: number): string {
+  let digits = String(Math.trunc(value));
+  if (digits.length > 3) {
+    let head = digits.slice(0, -3);
+    const tail = digits.slice(-3);
+    const groups: string[] = [];
+    while (head.length > 2) {
+      groups.unshift(head.slice(-2));
+      head = head.slice(0, -2);
+    }
+    if (head) groups.unshift(head);
+    digits = [...groups, tail].join(",");
+  }
+  return `₹${digits}`;
+}
+
+const MOCK_POLICIES: MockPolicy[] = [
+  {
+    id: "allow-support-refund-small",
+    effect: "permit",
+    matches: (c) => c.action === "refund" && c.role === "support" && c.amount <= 10000,
+    reason: (c) => `Refund of ${inr(c.amount)} is within the ₹10,000 per-call limit for support agents.`,
+  },
+  {
+    // The only APPROVAL policy (@decision("APPROVAL") in Cedar).
+    id: "hold-support-refund-large",
+    effect: "permit",
+    matches: (c) => c.action === "refund" && c.role === "support" && c.amount > 10000,
+    reason: (c) => `Refund of ${inr(c.amount)} exceeds the ₹10,000 per-call limit; a human must approve it.`,
+  },
+  {
+    id: "cumulative-refund-ceiling-v1",
+    effect: "forbid",
+    matches: (c) =>
+      c.action === "refund" && c.role === "support" && c.session_total + c.amount > REFUND_CEILING,
+    reason: (c) =>
+      `Session refunds would reach ${inr(c.session_total + c.amount)}, above the ${inr(REFUND_CEILING)} session ceiling.`,
+  },
+  {
+    id: "forbid-support-delete",
+    effect: "forbid",
+    matches: (c) => c.action === "delete_customer" && c.role === "support",
+    reason: () => "Support agents may not delete customers.",
+  },
+  {
+    id: "allow-finance-refund",
+    effect: "permit",
+    matches: (c) => c.action === "refund" && c.role === "finance" && c.amount <= 100000,
+    reason: (c) => `Refund of ${inr(c.amount)} is within the ₹1,00,000 per-call limit for finance agents.`,
+  },
+  {
+    id: "forbid-intern-export",
+    effect: "forbid",
+    matches: (c) => c.action === "export_customer_data" && c.role === "intern",
+    reason: () => "Intern agents may not export customer data.",
+  },
+];
+
+// session id → running refund total. Only ALLOWed refunds count; APPROVAL
+// does not add until a human approves. (Backend ledger writes: next branch.)
+const sessionTotals = new Map<string, number>();
 
 export function getMockSessionTotal(session: string): number {
   return sessionTotals.get(session) ?? 0;
@@ -87,60 +177,100 @@ export function resetMockSessions(): void {
   sessionTotals.clear();
 }
 
+function badRequest(message: string): never {
+  throw new AuthorizeError(400, message);
+}
+
+// Same checks, order and messages as validate() + validate_for_cedar() + unknown agent in app.py.
+function validateMockRequest(request: AuthorizeRequest): Role {
+  const body = request as unknown as Record<string, unknown>;
+
+  const missing = REQUIRED_STRING_FIELDS.filter((f) => body[f] === undefined || body[f] === null);
+  if (missing.length) badRequest(`Missing required field(s): ${missing.join(", ")}.`);
+
+  for (const field of REQUIRED_STRING_FIELDS) {
+    const value = body[field];
+    if (typeof value !== "string" || !value.trim()) {
+      badRequest(`Field '${field}' must be a non-empty string.`);
+    }
+  }
+
+  const amount = body.amount;
+  const hasAmount = amount !== undefined && amount !== null;
+  if (body.action === "refund" && !hasAmount) {
+    badRequest("Field 'amount' is required when action is 'refund'.");
+  }
+  if (hasAmount) {
+    if (typeof amount !== "number" || !Number.isFinite(amount)) {
+      badRequest("Field 'amount' must be a number, e.g. 9000.");
+    }
+    if (amount < 0) badRequest("Field 'amount' must not be negative.");
+  }
+
+  const action = body.action as string;
+  if (!KNOWN_ACTIONS.includes(action)) {
+    badRequest(`Unknown action '${action}'. Supported actions: ${KNOWN_ACTIONS.join(", ")}.`);
+  }
+  if (hasAmount) {
+    if (!Number.isInteger(amount)) {
+      badRequest("Field 'amount' must be a whole number of rupees, e.g. 9000.");
+    }
+    if ((amount as number) > MAX_AMOUNT) badRequest(`Field 'amount' must not exceed ${MAX_AMOUNT}.`);
+  }
+
+  const agent = body.agent as string;
+  const role = MOCK_AGENT_ROLES[agent];
+  if (!role) badRequest(`Unknown agent '${agent}'. Register the agent before calling authorize.`);
+  return role;
+}
+
 export async function mockAuthorize(request: AuthorizeRequest): Promise<AuthorizeResponse> {
   // Simulated latency so loading states are visible while building the UI.
   await new Promise((resolve) => setTimeout(resolve, 150));
 
-  const { agent, session, action } = request;
-  if (!agent || !session || !action || !request.resource) {
-    throw new Error("Missing required field(s): agent, session, action, resource.");
-  }
-  if (action === "refund" && (typeof request.amount !== "number" || !Number.isFinite(request.amount))) {
-    throw new Error("Field 'amount' must be a number, e.g. 9000.");
-  }
-
-  const role = roleOf(agent);
-  const amount = request.amount ?? 0;
-  const total = getMockSessionTotal(session);
-
-  const decide = (decision: Decision, policy: string, reason: string): AuthorizeResponse => {
-    let sessionTotal = total;
-    if (decision === "ALLOW" && action === "refund") {
-      sessionTotal = total + amount;
-      sessionTotals.set(session, sessionTotal);
-    }
-    return { decision, policy, reason, session_total: sessionTotal };
+  const role = validateMockRequest(request);
+  const { session, action } = request;
+  const context: MockContext = {
+    role,
+    action,
+    amount: request.amount ?? 0,
+    session_total: getMockSessionTotal(session),
   };
 
-  if (role === "support" && action === "refund") {
-    if (total + amount > SESSION_SUPPORT_CEILING) {
-      return decide(
-        "DENY",
-        "cumulative-refund-ceiling-v1",
-        `Session refunds would reach ₹${total + amount}, above the ₹${SESSION_SUPPORT_CEILING} ceiling.`,
-      );
-    }
-    if (amount > PER_CALL_SUPPORT_LIMIT) {
-      return decide(
-        "APPROVAL",
-        "support-refund-approval-v1",
-        `Refund of ₹${amount} exceeds the ₹${PER_CALL_SUPPORT_LIMIT} per-call limit; needs human approval.`,
-      );
-    }
-    return decide("ALLOW", "support-refund-limit-v1", `Refund of ₹${amount} is within the per-call limit.`);
+  const matched = MOCK_POLICIES.filter((p) => p.matches(context));
+  const byId = (a: MockPolicy, b: MockPolicy) => (a.id < b.id ? -1 : 1);
+  const forbids = matched.filter((p) => p.effect === "forbid").sort(byId);
+  const permits = matched.filter((p) => p.effect === "permit").sort(byId);
+
+  let decision: Decision;
+  let policy: PolicyId;
+  let reason: string;
+
+  if (forbids.length) {
+    // Any forbid beats any permit.
+    [decision, policy, reason] = ["DENY", forbids[0].id, forbids[0].reason(context)];
+  } else if (permits.length) {
+    const hold = permits.find((p) => p.id === "hold-support-refund-large");
+    const chosen = hold ?? permits[0];
+    [decision, policy, reason] = [hold ? "APPROVAL" : "ALLOW", chosen.id, chosen.reason(context)];
+  } else {
+    // No matching permit: default deny.
+    [decision, policy, reason] = [
+      "DENY",
+      "no-matching-policy",
+      `No policy permits ${role} agents to ${action.replace(/_/g, " ")}.`,
+    ];
   }
 
-  if (role === "support" && action === "delete_customer") {
-    return decide("DENY", "support-delete-customer-v1", "Support agents may not delete customers.");
+  if (decision === "ALLOW" && action === "refund") {
+    sessionTotals.set(session, context.session_total + context.amount);
   }
 
-  if (role === "finance" && action === "refund" && amount <= PER_CALL_FINANCE_LIMIT) {
-    return decide("ALLOW", "finance-refund-limit-v1", `Refund of ₹${amount} is within the finance limit.`);
-  }
-
-  if (role === "intern" && action === "export_customer_data") {
-    return decide("DENY", "intern-export-customer-data-v1", "Interns may not export customer data.");
-  }
-
-  return decide("DENY", "default-deny", "No policy permits this action.");
+  return {
+    decision,
+    reason,
+    policy,
+    session_total: context.session_total,
+    ceiling: action === "refund" ? REFUND_CEILING : null,
+  };
 }
