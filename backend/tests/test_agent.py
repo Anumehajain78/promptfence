@@ -106,6 +106,36 @@ def test_context_is_per_request():
     assert second.calls == [] and second.executed == []
 
 
+# --- the reply the customer sees --------------------------------------------
+
+def test_system_prompt_forbids_thinking_in_replies():
+    assert "Never include reasoning, thinking tags, or internal notes" in agent_app.SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("<thinking>weigh the options</thinking>Your refund is done.", "Your refund is done."),
+    ("  <thinking>\nline one\nline two\n</thinking>\n\nRefund processed.  ", "Refund processed."),
+    ("<THINKING>shouty</THINKING> Done.", "Done."),
+    ("<Thinking>first</Thinking>Kept.<thinking>second</thinking>", "Kept."),
+    ("Nothing to strip.", "Nothing to strip."),
+])
+def test_strip_thinking(raw, expected):
+    assert agent_app.strip_thinking(raw) == expected
+
+
+def test_chat_reply_comes_back_without_the_thinking_block(monkeypatch):
+    class FakeAgent:
+        def __call__(self, message):
+            return "<thinking>The customer wants ORD-1001 refunded.\nCheck policy.</thinking>\n\nRefund of ₹5,000 for order ORD-1001 processed."
+
+    monkeypatch.setattr(agent_app, "build_agent", lambda context: FakeAgent())
+    reply, context = agent_app.chat("refund ORD-1001", session="chat-strip")
+
+    assert reply == "Refund of ₹5,000 for order ORD-1001 processed."
+    assert "<thinking>" not in reply.lower()
+    assert context.session == "chat-strip"
+
+
 # --- handler ----------------------------------------------------------------
 
 def invoke(body):

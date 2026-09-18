@@ -11,6 +11,7 @@ authorize() directly so the demo is deterministic (see backend/README.md).
 
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass, field
 
@@ -39,7 +40,18 @@ a customer a refund is done unless the tool says it was processed.
 Every refund is checked by PromptFence before it runs. The tool will tell you
 whether the refund was processed, is waiting for human approval, or was blocked
 by policy. Report that outcome honestly and plainly, including when the request
-was denied or held. Do not argue with the policy or try the tool again."""
+was denied or held. Do not argue with the policy or try the tool again.
+
+Never include reasoning, thinking tags, or internal notes in your reply — only
+the message the customer should read."""
+
+# Some models narrate their reasoning in <thinking> tags. The prompt asks them
+# not to; this strips it if they do anyway, so it never reaches a customer.
+THINKING_BLOCK = re.compile(r"<thinking>.*?</thinking>", re.DOTALL | re.IGNORECASE)
+
+
+def strip_thinking(text):
+    return THINKING_BLOCK.sub("", text).strip()
 
 # Five fake orders. Reads need no authorization — looking up an order has no
 # real-world consequence, so lookup_order does not call PromptFence.
@@ -156,7 +168,7 @@ def chat(message, session=None):
     context = ToolContext(session=session or f"chat-{secrets.token_hex(4)}")
     agent = build_agent(context)
     result = agent(message)
-    return str(result).strip(), context
+    return strip_thinking(str(result)), context
 
 
 def handler(event, context):
