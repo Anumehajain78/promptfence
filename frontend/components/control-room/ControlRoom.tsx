@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { REFUND_CEILING } from "@/lib/api";
+import { AgentPanel } from "./AgentPanel";
 import { DecisionPanel } from "./DecisionPanel";
 import { ErrorLine } from "./ErrorLine";
 import { FenceChart } from "./FenceChart";
@@ -62,8 +63,14 @@ export function ControlRoom() {
       <main className="grid min-h-0 grid-cols-1 [grid-template-areas:'b'_'a'_'c'] lg:grid-cols-[minmax(0,62fr)_minmax(0,38fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:[grid-template-areas:'a_b'_'a_c']">
         <section
           aria-label="Requests"
-          className="grid min-h-0 grid-rows-[auto_auto_auto_auto] border-b border-grey-200 px-[clamp(16px,2.4vw,32px)] py-[clamp(16px,2vw,28px)] [grid-area:a] lg:grid-rows-[auto_auto_auto_minmax(0,1fr)] lg:border-b-0 lg:border-r"
+          className="grid min-h-0 grid-rows-[auto_auto_auto_auto_auto] gap-y-4 border-b border-grey-200 px-[clamp(16px,2.4vw,32px)] py-[clamp(16px,2vw,28px)] [grid-area:a] lg:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] lg:border-b-0 lg:border-r"
         >
+          <AgentPanel
+            transcript={room.transcript}
+            thinking={busy === "chat"}
+            disabled={locked}
+            onSend={room.sendChat}
+          />
           <RequestForm evaluating={busy === "authorize"} disabled={locked} onSubmit={room.submit} />
           <PolicyStrip />
           <RequestLedger rows={rows} loading={loading} selected={selectedNumber} onSelect={room.setSelected} />

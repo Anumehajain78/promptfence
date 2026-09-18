@@ -4,17 +4,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   USE_MOCK,
+  agentChat,
   attackRun,
   authorize,
   getSession,
   mockAttackRun,
   resetSession,
+  type AgentToolCall,
   type AttackRunResult,
   type DecisionRecord,
 } from "@/lib/api";
 import { rowNumber } from "./decision";
 
-export type Busy = "idle" | "authorize" | "attack" | "reset";
+export type Busy = "idle" | "authorize" | "attack" | "reset" | "chat";
+
+export interface ChatTurn {
+  role: "customer" | "agent" | "error";
+  text: string;
+  ts: string;
+  toolCalls?: AgentToolCall[];
+}
 
 export interface ManualRequest {
   agent: string;
@@ -84,6 +93,7 @@ export function useControlRoom(reducedMotion: boolean) {
   const [busy, setBusy] = useState<Busy>("idle");
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [transcript, setTranscript] = useState<ChatTurn[]>([]);
   // Bumped to cancel an in-progress reveal (reset, unmount).
   const runToken = useRef(0);
 
@@ -155,6 +165,41 @@ export function useControlRoom(reducedMotion: boolean) {
     [append, busy, sessionId],
   );
 
+  const sendChat = useCallback(
+    async (message: string) => {
+      const text = message.trim();
+      if (!sessionId || busy !== "idle" || !text) return;
+      setBusy("chat");
+      setTranscript((prev) => [...prev, { role: "customer", text, ts: new Date().toISOString() }]);
+      try {
+        const answer = await agentChat({ session: sessionId, message: text });
+        setTranscript((prev) => [
+          ...prev,
+          { role: "agent", text: answer.reply, ts: new Date().toISOString(), toolCalls: answer.tool_calls },
+        ]);
+        setError(null);
+
+        // A tool call becomes a ledger decision: re-read the session so the row
+        // slides in, the chart steps and the total moves.
+        if (answer.tool_calls.length > 0) {
+          const session = await getSession(sessionId);
+          setRows(session.decisions);
+          const last = session.decisions[session.decisions.length - 1];
+          if (last) setSelected(rowNumber(last, session.decisions.length - 1));
+        }
+      } catch (err) {
+        setError(messageOf(err));
+        setTranscript((prev) => [
+          ...prev,
+          { role: "error", text: "The agent couldn't respond. Try again.", ts: new Date().toISOString() },
+        ]);
+      } finally {
+        setBusy("idle");
+      }
+    },
+    [busy, sessionId],
+  );
+
   const runAttack = useCallback(async () => {
     if (!sessionId || busy !== "idle") return;
     const token = ++runToken.current;
@@ -222,6 +267,7 @@ export function useControlRoom(reducedMotion: boolean) {
       await resetSession(sessionId);
       setRows([]);
       setSelected(null);
+      setTranscript([]);
       setError(null);
     } catch (err) {
       setError(messageOf(err));
@@ -230,5 +276,5 @@ export function useControlRoom(reducedMotion: boolean) {
     }
   }, [busy, sessionId]);
 
-  return { sessionId, rows, loading, busy, error, selected, setSelected, submit, runAttack, reset };
+  return { sessionId, rows, loading, busy, error, selected, setSelected, submit, runAttack, reset, transcript, sendChat };
 }
