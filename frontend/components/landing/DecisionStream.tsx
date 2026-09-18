@@ -54,7 +54,7 @@ const WORD: Record<Decision, string> = { ALLOW: "Allow", APPROVAL: "Approval", D
 // Fill tones read on the ink surface; the text tones are for paper.
 const TONE: Record<Decision, string> = { ALLOW: "text-allow-fill", APPROVAL: "text-amber-fill", DENY: "text-deny-fill" };
 
-export function DecisionStream() {
+export function DecisionStream({ running = true }: { running?: boolean }) {
   const reducedMotion = useReducedMotion();
   const [ref, inView] = useInViewOnce<HTMLDivElement>({ threshold: 0 });
   const [head, setHead] = useState(VISIBLE); // index of the next line to reveal
@@ -67,10 +67,10 @@ export function DecisionStream() {
   }, []);
 
   useEffect(() => {
-    if (reducedMotion || !inView || !visible) return;
+    if (reducedMotion || !inView || !visible || !running) return;
     const t = setInterval(() => setHead((h) => h + 1), INTERVAL_MS);
     return () => clearInterval(t);
-  }, [reducedMotion, inView, visible]);
+  }, [reducedMotion, inView, visible, running]);
 
   const lines = Array.from({ length: VISIBLE }, (_, i) => lineAt(head - VISIBLE + i));
 
