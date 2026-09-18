@@ -74,6 +74,27 @@ export interface DecisionRecord {
   ts: string;
 }
 
+// One tool the agent tried to use. Mirrors backend/src/agent/app.py.
+export interface AgentToolCall {
+  tool: string;
+  args: Record<string, string | number>;
+  decision: Decision;
+  policy: PolicyId | string;
+  reason: string;
+  executed: boolean;
+}
+
+export interface AgentChatRequest {
+  session: string;
+  message: string;
+}
+
+export interface AgentChatResponse {
+  session: string;
+  reply: string;
+  tool_calls: AgentToolCall[];
+}
+
 export interface SessionResponse {
   session_id: string;
   agent: string;
@@ -155,6 +176,11 @@ export function resetSession(id: string): Promise<void> {
   return USE_MOCK ? mockResetSession(id) : request("DELETE", sessionPath(id));
 }
 
+// The real path runs a Bedrock turn: expect roughly 5–12 seconds.
+export function agentChat(req: AgentChatRequest): Promise<AgentChatResponse> {
+  return USE_MOCK ? mockAgentChat(req) : request("POST", "/v1/agent/chat", req);
+}
+
 // ---------------------------------------------------------------------------
 // Mock: a local mirror of backend/policies/*.cedar and the handler's contract,
 // including the session ledger. Same validation messages, policy ids, reasons
@@ -173,6 +199,7 @@ const REQUIRED_STRING_FIELDS = ["agent", "session", "action", "resource"] as con
 const MAX_AMOUNT = 1_000_000_000_000;
 const ATTACK_RUN_MAX_COUNT = 100;
 const MOCK_LATENCY_MS = 150;
+const MOCK_AGENT_LATENCY_MS = 1200;
 const MOCK_ATTACK_INTERVAL_MS = 120;
 
 interface MockContext {
@@ -402,6 +429,73 @@ export async function* mockAttackRun({
     yield record;
     if (record.decision === "DENY") return;
   }
+}
+
+const MOCK_ORDERS: Record<string, { amount: number; status: string; customer: string }> = {
+  "ORD-1001": { amount: 9000, status: "delivered", customer: "#CUST-4474" },
+  "ORD-1002": { amount: 42000, status: "delivered", customer: "#CUST-4474" },
+  "ORD-1003": { amount: 5000, status: "shipped", customer: "#CUST-5120" },
+  "ORD-1004": { amount: 1500, status: "delivered", customer: "#CUST-6033" },
+  "ORD-1005": { amount: 120000, status: "cancelled", customer: "#CUST-7781" },
+};
+
+// Enough parsing to drive the demo: an order id, an amount, and whether this
+// reads like a refund request. The real agent uses the model for this.
+function readIntent(message: string) {
+  const orderMatch = message.match(/ord-\s?(\d{4})/i);
+  // Remove the order id first, or "ORD-1001" would be read as the amount.
+  const rest = message.replace(/ord-\s?\d{4}/gi, " ").replace(/,/g, "").toLowerCase();
+  const amountMatch =
+    rest.match(/₹\s*(\d+)/) || rest.match(/(\d+)\s*(?:rupees|rupee|rs\b|inr)/) || rest.match(/\b(\d{3,})\b/);
+  return {
+    orderId: orderMatch ? `ORD-${orderMatch[1]}` : null,
+    amount: amountMatch ? Number(amountMatch[1]) : null,
+    isRefund: /refund|money back|return my/.test(message.toLowerCase()),
+  };
+}
+
+export async function mockAgentChat({ session, message }: AgentChatRequest): Promise<AgentChatResponse> {
+  // The real turn takes 5–12s; enough here to show the thinking state.
+  await sleep(MOCK_AGENT_LATENCY_MS);
+
+  const { orderId, amount, isRefund } = readIntent(message);
+
+  if (!isRefund) {
+    const order = orderId ? MOCK_ORDERS[orderId] : undefined;
+    const reply = order
+      ? `Order ${orderId} is ${order.status}. It is for ${inr(order.amount)}, customer ${order.customer}. No refund has been requested on it.`
+      : "I can look up an order or issue a refund. Which order id should I check? The ones I have are ORD-1001 to ORD-1005.";
+    return { session, reply, tool_calls: [] };
+  }
+
+  if (!orderId || amount === null) {
+    return {
+      session,
+      reply: "I can do that — which order id, and how much should I refund? I never guess an order id.",
+      tool_calls: [],
+    };
+  }
+
+  // The governed tool: same decision path and same ledger as every other call.
+  const record = mockDecide({ agent: "support-agent", session, action: "refund", resource: orderId, amount });
+  const executed = record.decision === "ALLOW";
+  const call: AgentToolCall = {
+    tool: "refund_order",
+    args: { order_id: orderId, amount },
+    decision: record.decision,
+    policy: record.policy,
+    reason: record.reason,
+    executed,
+  };
+
+  const reply =
+    record.decision === "ALLOW"
+      ? `Done — I've refunded ${inr(amount)} on ${orderId}. It should reach the original payment method in 3–5 working days.`
+      : record.decision === "APPROVAL"
+        ? `A refund of ${inr(amount)} on ${orderId} is above what I can approve alone, so I've held it as request #${record.seq} for a human to confirm. Nothing has been paid out yet.`
+        : `I can't refund ${inr(amount)} on ${orderId}. PromptFence blocked it under ${record.policy}: ${record.reason} The tool was not called.`;
+
+  return { session, reply, tool_calls: [call] };
 }
 
 export async function mockGetSession(id: string): Promise<SessionResponse> {

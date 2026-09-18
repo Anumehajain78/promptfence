@@ -34,6 +34,7 @@ const config: Config = {
       },
       keyframes: {
         "pf-row": { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "none" } },
+        "pf-pulse": { "0%, 100%": { opacity: "1" }, "50%": { opacity: "0.25" } },
         "pf-shake": {
           "0%, 100%": { transform: "translateX(0)" },
           "25%": { transform: "translateX(-2px)" },
@@ -43,6 +44,7 @@ const config: Config = {
       animation: {
         "pf-row": "pf-row 200ms ease both",
         "pf-shake": "pf-shake 150ms linear 1",
+        "pf-pulse": "pf-pulse 1.2s ease-in-out infinite",
       },
     },
     // Design rules: no rounded corners > 2px, no shadows.
