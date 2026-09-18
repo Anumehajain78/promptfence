@@ -36,11 +36,14 @@ export function PrimaryLink({ href, children }: { href: string; children: ReactN
   );
 }
 
-export function SecondaryLink({ href, children }: { href: string; children: ReactNode }) {
+// `inverted` is for the closing section once it has crossfaded to ink.
+export function SecondaryLink({ href, children, inverted = false }: { href: string; children: ReactNode; inverted?: boolean }) {
   return (
     <Link
       href={href}
-      className="inline-flex h-12 items-center whitespace-nowrap rounded border border-ink px-5 text-[15px] font-medium text-ink no-underline transition-colors duration-150 hover:bg-ink hover:text-paper"
+      className={`inline-flex h-12 items-center whitespace-nowrap rounded border px-5 text-[15px] font-medium no-underline transition-colors duration-150 ${
+        inverted ? "border-paper text-paper hover:bg-paper hover:text-ink" : "border-ink text-ink hover:bg-ink hover:text-paper"
+      }`}
     >
       {children}
     </Link>

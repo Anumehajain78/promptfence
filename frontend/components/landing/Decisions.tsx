@@ -1,69 +1,57 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
+import { useReducedMotion } from "@/components/control-room/useReducedMotion";
 import { Reveal } from "./Reveal";
-import { Display, Kicker, PAGE_X, SECTION_Y, StopMark } from "./ui";
+import { Display, Kicker, PAGE_X, SECTION_Y } from "./ui";
 
-type Path = "allow" | "deny" | "approval";
-
-// Examples match the backend policies: refunds ≤ ₹10,000 are allowed, refunds
-// above ₹10,000 are held for a human, and #40 hits the session ceiling.
-const PATHS: {
-  id: Path;
-  action: string;
-  detail: string;
-  word: string;
-  wordTone: string;
-  outcome: string;
-  outcomeNote: string;
-}[] = [
-  { id: "allow", action: "refund", detail: "₹9,000 · #4474", word: "Allow", wordTone: "text-allow", outcome: "Real tool", outcomeNote: "executed" },
-  { id: "deny", action: "refund", detail: "₹9,000 · #40", word: "Deny", wordTone: "text-deny", outcome: "Stop", outcomeNote: "tool not called" },
-  { id: "approval", action: "refund", detail: "₹42,000 · #4474", word: "Approval", wordTone: "text-amber", outcome: "Human", outcomeNote: "approve · deny" },
+// One example per outcome, each with its own policy and its own reason.
+const PATHS = [
+  {
+    id: "allow",
+    call: "refund()",
+    detail: "₹9,000 · #4474",
+    word: "Allow",
+    tone: "text-allow",
+    rule: "border-t-allow-fill",
+    policy: "allow-support-refund-small",
+    reason: "Within the ₹10,000 per-call limit for support agents.",
+    outcome: "Real tool",
+    outcomeNote: "executed",
+  },
+  {
+    id: "approval",
+    call: "refund()",
+    detail: "₹42,000 · #4474",
+    word: "Approval",
+    tone: "text-amber",
+    rule: "border-t-amber-fill",
+    policy: "hold-support-refund-large",
+    reason: "Above ₹10,000 — held at the fence for a human.",
+    outcome: "Human",
+    outcomeNote: "approve · deny",
+  },
+  {
+    id: "deny",
+    call: "delete_customer()",
+    detail: "#CUST-4474",
+    word: "Deny",
+    tone: "text-deny",
+    rule: "border-t-deny-fill",
+    policy: "forbid-support-delete",
+    reason: "Never permitted for support-agent.",
+    outcome: "Stop",
+    outcomeNote: "tool not called",
+  },
 ];
 
-function Track({ path, on }: { path: Path; on: boolean }) {
-  const fence = !on ? "bg-ink" : path === "allow" ? "bg-allow-fill" : path === "deny" ? "bg-deny-fill" : "bg-amber-fill";
-  const color = path === "allow" ? "bg-allow-fill" : path === "deny" ? "bg-deny-fill" : "bg-amber-fill";
-  return (
-    <div aria-hidden className="relative h-11">
-      <span className="absolute left-0 right-0 top-1/2 h-px bg-grey-200" />
-      <span
-        className={`absolute left-0 top-1/2 -mt-px h-0.5 w-1/2 origin-left transition-transform duration-[400ms] ease-out ${color} ${on ? "scale-x-100" : "scale-x-0"}`}
-      />
-      {path === "allow" && (
-        <span
-          className={`absolute left-1/2 top-1/2 -mt-px h-0.5 w-1/2 origin-left bg-allow-fill transition-transform duration-[400ms] ease-out ${
-            on ? "scale-x-100 delay-[400ms]" : "scale-x-0"
-          }`}
-        />
-      )}
-      {path === "approval" && (
-        <span
-          className={`absolute left-1/2 top-1/2 -mt-px h-0 w-1/2 origin-left border-t-2 border-dashed border-amber-fill transition-transform duration-[400ms] ease-out ${
-            on ? "scale-x-100 delay-[400ms]" : "scale-x-0"
-          }`}
-        />
-      )}
-      <span className={`absolute -bottom-[29px] -top-7 left-1/2 -ml-px w-0.5 transition-colors duration-300 ${fence}`} />
-      {path === "deny" && (
-        <StopMark className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300 ${on ? "opacity-100" : "opacity-0"}`} />
-      )}
-      {path === "approval" && (
-        <span
-          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded border border-amber-fill bg-paper px-2 py-0.5 text-xs text-amber transition-opacity duration-300 ${
-            on ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          Held
-        </span>
-      )}
-    </div>
-  );
-}
+const SPRING = { type: "spring" as const, stiffness: 220, damping: 26 };
 
 export function Decisions() {
-  const [active, setActive] = useState<Path>("allow");
+  const reducedMotion = useReducedMotion();
+  const [hovered, setHovered] = useState<string | null>(null);
+
   return (
     <section id="decisions" aria-label="Three decisions" className="border-t border-grey-200">
       <div className={`mx-auto max-w-[1440px] ${PAGE_X} ${SECTION_Y}`}>
@@ -80,34 +68,38 @@ export function Decisions() {
           </Display>
         </Reveal>
 
-        <Reveal className="mt-[clamp(40px,5vw,72px)] border-t border-ink">
-          {PATHS.map((p) => {
-            const on = active === p.id;
+        <div className="mt-[clamp(40px,5vw,72px)] flex flex-col gap-4 md:flex-row" onMouseLeave={() => setHovered(null)}>
+          {PATHS.map((p, i) => {
+            const dim = hovered !== null && hovered !== p.id;
             return (
-              <div
+              <motion.div
                 key={p.id}
-                role="button"
                 tabIndex={0}
-                aria-pressed={on}
-                onMouseEnter={() => setActive(p.id)}
-                onFocus={() => setActive(p.id)}
-                onClick={() => setActive(p.id)}
-                className="grid cursor-pointer grid-cols-[minmax(88px,0.9fr)_minmax(0,2.2fr)_minmax(88px,0.9fr)] items-center gap-x-[clamp(12px,2vw,28px)] gap-y-3 border-b border-grey-200 py-7 outline-offset-[-2px]"
+                aria-label={`${p.word}: ${p.call}`}
+                onMouseEnter={() => setHovered(p.id)}
+                onFocus={() => setHovered(p.id)}
+                onBlur={() => setHovered(null)}
+                initial={reducedMotion ? false : { opacity: 0, y: 40 }}
+                whileInView={reducedMotion ? undefined : { opacity: dim ? 0.45 : 1, y: 0 }}
+                viewport={{ once: true, amount: 0.3 }}
+                animate={reducedMotion ? undefined : { opacity: dim ? 0.45 : 1, flexGrow: hovered === p.id ? 1.6 : 1 }}
+                transition={reducedMotion ? { duration: 0 } : { ...SPRING, delay: hovered === null ? i * 0.12 : 0 }}
+                className={`flex flex-1 basis-0 cursor-pointer flex-col border-t-2 ${p.rule} bg-paper px-4 py-5 outline-offset-2`}
               >
-                <div className="text-[13px] leading-normal">
-                  <div className="font-mono font-medium">{p.action}()</div>
-                  <div className="font-mono text-grey-500">{p.detail}</div>
-                  <div className={`mt-2 font-medium ${p.wordTone}`}>{p.word}</div>
-                </div>
-                <Track path={p.id} on={on} />
-                <div className={`text-right transition-colors duration-300 ${on ? "text-ink" : "text-grey-400"}`}>
-                  <div className="text-[clamp(20px,2.2vw,32px)] font-medium leading-none tracking-[-0.03em]">{p.outcome}</div>
+                <div className="font-mono text-[13px] font-medium">{p.call}</div>
+                <div className="font-mono text-[13px] text-grey-500">{p.detail}</div>
+                <div className={`mt-3 text-[clamp(20px,2.2vw,32px)] font-medium leading-none tracking-[-0.03em] ${p.tone}`}>{p.word}</div>
+                <div className="mt-4 border-t border-grey-100 pt-3 font-mono text-xs text-grey-500">{p.policy}</div>
+                <p className="m-0 mt-2 text-[13px] leading-normal text-grey-700 [text-wrap:pretty]">{p.reason}</p>
+                <div className="mt-auto pt-6">
+                  <div className="text-[clamp(18px,2vw,26px)] font-medium leading-none tracking-[-0.03em]">{p.outcome}</div>
                   <div className="mt-1.5 text-[13px] text-grey-500">{p.outcomeNote}</div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </Reveal>
+        </div>
+
         <Reveal>
           <p className="m-0 mt-[clamp(24px,3vw,40px)] max-w-[52ch] text-[clamp(15px,1.1vw,17px)] leading-normal text-grey-700 [text-wrap:pretty]">
             One fence, three outcomes. Allowed requests cross to the real tool. Denied requests stop at the boundary and the tool is never called. Requests that need a person wait at the fence until a human approves or denies.
