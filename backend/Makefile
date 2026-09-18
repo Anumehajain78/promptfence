@@ -31,13 +31,24 @@ seed:
 	AGENTS_TABLE="$$table" $(PYTHON) scripts/seed_agents.py
 
 # Called by `sam build` (template.yaml: Metadata.BuildMethod makefile).
-# Packages the handler, the Cedar policies, and Lambda-compatible wheels
-# (Python 3.11, manylinux x86_64) regardless of the host's Python version.
-build-AuthorizeFunction:
-	$(PYTHON) -m pip install -r src/authorize/requirements.txt \
+# Each bundle is flat: its own app.py, the shared modules from src/common, the
+# Cedar policies, and Lambda-compatible wheels (Python 3.11, manylinux x86_64)
+# regardless of the host's Python version.
+define package_lambda
+	$(PYTHON) -m pip install -r $(1) \
 		--target "$(ARTIFACTS_DIR)" \
 		--platform manylinux2014_x86_64 --implementation cp --python-version 3.11 \
 		--only-binary=:all: --upgrade --quiet
-	cp src/authorize/*.py "$(ARTIFACTS_DIR)/"
+	cp $(2)/*.py src/common/*.py "$(ARTIFACTS_DIR)/"
 	mkdir -p "$(ARTIFACTS_DIR)/policies"
 	cp policies/*.cedar policies/schema.cedarschema "$(ARTIFACTS_DIR)/policies/"
+endef
+
+build-AuthorizeFunction:
+	$(call package_lambda,src/authorize/requirements.txt,src/authorize)
+
+# strands-agents + cedarpy unzip to ~113 MB, inside Lambda's 250 MB limit.
+# strands-agents-tools is deliberately not installed: it would push the bundle
+# to ~261 MB and this agent defines its own tools.
+build-AgentFunction:
+	$(call package_lambda,src/agent/requirements.txt,src/agent)
