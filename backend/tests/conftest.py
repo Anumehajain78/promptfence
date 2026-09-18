@@ -3,7 +3,11 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "authorize"))
+# Both Lambda bundles are flat: the shared modules sit next to each app.py.
+# src/agent is deliberately absent — it has its own app.py, and test_agent.py
+# loads it by path so it cannot shadow the API handler here.
+for _src in ("common", "authorize"):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", _src))
 
 
 @pytest.fixture(autouse=True)

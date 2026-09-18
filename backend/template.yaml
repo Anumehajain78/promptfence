@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: PromptFence — permission gate for AI agents (Cedar + session ledger).
 
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: apac.amazon.nova-lite-v1:0
+    Description: Bedrock model the sample agent runs on.
+
 Globals:
   Function:
     Runtime: python3.11
@@ -75,6 +81,47 @@ Resources:
           Properties:
             ApiId: !Ref PromptFenceApi
             Path: /v1/attack-run
+            Method: POST
+
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    # Built by the Makefile (build-AgentFunction): handler + src/common + policies
+    # + strands-agents and cedarpy wheels for the Lambda platform.
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: app.handler
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          AGENTS_TABLE: !Ref AgentsTable
+          SESSIONS_TABLE: !Ref SessionsTable
+          DECISIONS_TABLE: !Ref DecisionsTable
+          EVENT_BUS_NAME: !Ref PromptFenceBus
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DecisionsTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref PromptFenceBus
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: "*"
+      Events:
+        Chat:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PromptFenceApi
+            Path: /v1/agent/chat
             Method: POST
 
   AgentsTable:
