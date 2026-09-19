@@ -42,7 +42,6 @@ Policy name: cumulative-refund-ceiling-v1.
   #C2C5BC #D6D9CF #E6E8E0, allow #128A60/#18B981, lime #B8F227/#C9F94F,
   amber #9A6B00/#F3B83F, deny #D93636/#FF4D4D, clay #D97757.
   No gradients, no shadows, no rounded corners >2px, no icons.
-- design/: reference exports from Claude Design. Match them; don't invent new UI.
 
 ## Data model (DynamoDB)
 - agents:    PK agent_id. Holds api_key, role, display name.
