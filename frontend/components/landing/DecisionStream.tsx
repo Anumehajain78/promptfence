@@ -54,7 +54,7 @@ const WORD: Record<Decision, string> = { ALLOW: "Allow", APPROVAL: "Approval", D
 // Fill tones read on the ink surface; the text tones are for paper.
 const TONE: Record<Decision, string> = { ALLOW: "text-allow-fill", APPROVAL: "text-amber-fill", DENY: "text-deny-fill" };
 
-export function DecisionStream({ running = true }: { running?: boolean }) {
+export function DecisionStream() {
   const reducedMotion = useReducedMotion();
   const [ref, inView] = useInViewOnce<HTMLDivElement>({ threshold: 0 });
   const [head, setHead] = useState(VISIBLE); // index of the next line to reveal
@@ -67,10 +67,10 @@ export function DecisionStream({ running = true }: { running?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (reducedMotion || !inView || !visible || !running) return;
+    if (reducedMotion || !inView || !visible) return;
     const t = setInterval(() => setHead((h) => h + 1), INTERVAL_MS);
     return () => clearInterval(t);
-  }, [reducedMotion, inView, visible, running]);
+  }, [reducedMotion, inView, visible]);
 
   const lines = Array.from({ length: VISIBLE }, (_, i) => lineAt(head - VISIBLE + i));
 
@@ -80,7 +80,7 @@ export function DecisionStream({ running = true }: { running?: boolean }) {
       role="log"
       aria-label="Live decision stream (demo data)"
       aria-live="off"
-      className="mt-[clamp(48px,6vw,88px)] rounded bg-ink px-[clamp(14px,2vw,24px)] py-4 text-paper"
+      className="pf-theme-lock rounded-[clamp(16px,2vw,28px)] bg-ink px-[clamp(18px,2.6vw,36px)] py-[clamp(18px,2vw,28px)] text-paper"
     >
       <div className="flex items-baseline justify-between gap-4 border-b border-grey-700 pb-3 text-[13px] text-grey-300">
         <span>Decision stream</span>
@@ -91,7 +91,7 @@ export function DecisionStream({ running = true }: { running?: boolean }) {
         {lines.map((line, i) => (
           <li
             key={line.n}
-            className={`grid h-[30px] grid-cols-[52px_minmax(0,1fr)_76px_72px] items-center gap-3 border-b border-grey-700/60 last:border-b-0 sm:grid-cols-[52px_104px_120px_minmax(0,1fr)_84px_76px] ${
+            className={`grid h-[30px] grid-cols-[52px_minmax(0,1fr)_76px_72px] items-center gap-3 border-b border-[color-mix(in_srgb,var(--c-grey-700)_60%,transparent)] last:border-b-0 sm:grid-cols-[52px_104px_120px_minmax(0,1fr)_84px_76px] ${
               i === VISIBLE - 1 && !reducedMotion ? "animate-pf-row" : ""
             }`}
           >
