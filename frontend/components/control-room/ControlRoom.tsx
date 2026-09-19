@@ -5,19 +5,28 @@ import { REFUND_CEILING } from "@/lib/api";
 import { AgentPanel } from "./AgentPanel";
 import { DecisionPanel } from "./DecisionPanel";
 import { ErrorLine } from "./ErrorLine";
-import { FenceChart } from "./FenceChart";
-import { FooterLine } from "./FooterLine";
 import { PolicyStrip } from "./PolicyStrip";
 import { RequestForm } from "./RequestForm";
 import { RequestLedger } from "./RequestLedger";
-import { SessionTotal } from "./SessionTotal";
+import { SessionBand } from "./SessionBand";
 import { TopBar } from "./TopBar";
 import { isCeilingBlock, rowNumber } from "./decision";
+import { CARD } from "./ui";
 import { useControlRoom } from "./useControlRoom";
 import { useReducedMotion } from "./useReducedMotion";
 
 const DEMO_CUSTOMER = "#CUST-4474";
 
+/**
+ * The Control Room, on one page:
+ *
+ *   [ Talk to the agent            ] [ Session total vs policy limit ]   ask, and watch what it does to
+ *   [ Send a request · Policy rules ] [          (on black)           ]   the session
+ *   [ Requests                                  ] [ Decision          ]   then inspect any request
+ *
+ * White cards on the paper ground, with the session as the one black card so it is the first thing the eye
+ * lands on. Nothing scrolls inside itself; only the page scrolls, and the bar stays with you.
+ */
 export function ControlRoom() {
   const reducedMotion = useReducedMotion();
   const room = useControlRoom(reducedMotion);
@@ -28,6 +37,7 @@ export function ControlRoom() {
   const selectedIndex = rows.findIndex((r, i) => rowNumber(r, i) === selected);
   const selectedRow = selectedIndex >= 0 ? rows[selectedIndex] : last;
   const selectedNumber = selectedRow ? rowNumber(selectedRow, selectedIndex >= 0 ? selectedIndex : rows.length - 1) : null;
+  const pinned = selectedIndex >= 0 && selectedIndex !== rows.length - 1;
   const total = last ? last.session_total_after : 0;
   const agent = rows[0]?.agent ?? "support-agent";
   const locked = busy !== "idle" || loading;
@@ -47,9 +57,10 @@ export function ControlRoom() {
   }, [busy, loading, runAttack, sessionId]);
 
   return (
-    <div className="grid min-h-[640px] grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-x-hidden lg:h-screen lg:overflow-hidden">
+    <div className="min-h-dvh bg-paper text-[16px] leading-normal text-ink">
+      <h1 className="sr-only">PromptFence Control Room</h1>
       <TopBar
-        sessionId={room.sessionId}
+        sessionId={sessionId}
         agent={agent}
         customer={DEMO_CUSTOMER}
         running={busy === "attack"}
@@ -58,36 +69,44 @@ export function ControlRoom() {
         onRun={room.runAttack}
         onReset={room.reset}
       />
-      <div>{error && <ErrorLine message={error} />}</div>
+      {error && <ErrorLine message={error} />}
 
-      <main className="grid min-h-0 grid-cols-1 [grid-template-areas:'b'_'a'_'c'] lg:grid-cols-[minmax(0,62fr)_minmax(0,38fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:[grid-template-areas:'a_b'_'a_c']">
-        <section
-          aria-label="Requests"
-          className="grid min-h-0 grid-rows-[auto_auto_auto_auto_auto] gap-y-4 border-b border-grey-200 px-[clamp(16px,2.4vw,32px)] py-[clamp(16px,2vw,28px)] [grid-area:a] lg:grid-rows-[auto_auto_auto_auto_minmax(0,1fr)] lg:border-b-0 lg:border-r"
-        >
-          <AgentPanel
-            transcript={room.transcript}
-            thinking={busy === "chat"}
-            disabled={locked}
-            onSend={room.sendChat}
+      <main className="mx-auto grid max-w-[1560px] gap-[clamp(16px,1.6vw,24px)] px-[clamp(16px,2.5vw,40px)] pb-[clamp(32px,4vw,64px)] pt-[clamp(16px,1.8vw,28px)] xl:grid-cols-12">
+        <div className="grid content-start gap-[clamp(16px,1.6vw,24px)] xl:col-span-7">
+          <AgentPanel transcript={room.transcript} thinking={busy === "chat"} disabled={locked} onSend={room.sendChat} />
+          <section aria-label="Send a request" className={`${CARD} pf-rise grid gap-7 p-[clamp(20px,2vw,30px)] [animation-delay:80ms]`}>
+            <RequestForm evaluating={busy === "authorize"} disabled={locked} onSubmit={room.submit} />
+            <div className="border-t border-grey-200 pt-6">
+              <PolicyStrip decidedBy={selectedRow?.policy ?? null} />
+            </div>
+          </section>
+        </div>
+
+        <div className="xl:col-span-5">
+          <SessionBand
+            rows={rows}
+            loading={loading}
+            total={total}
+            limit={REFUND_CEILING}
+            blocked={blocked}
+            running={busy === "attack"}
+            reducedMotion={reducedMotion}
+            className="pf-rise [animation-delay:120ms] xl:sticky xl:top-[92px]"
           />
-          <RequestForm evaluating={busy === "authorize"} disabled={locked} onSubmit={room.submit} />
-          <PolicyStrip />
+        </div>
+
+        <div className="xl:col-span-8">
           <RequestLedger rows={rows} loading={loading} selected={selectedNumber} onSelect={room.setSelected} />
-        </section>
-
-        <section
-          aria-label="Session total vs policy limit"
-          className="flex flex-col border-b border-grey-200 px-[clamp(16px,2.4vw,32px)] py-[clamp(16px,2vw,28px)] [grid-area:b]"
-        >
-          <FenceChart rows={rows} loading={loading} limit={REFUND_CEILING} />
-          <SessionTotal value={total} limit={REFUND_CEILING} blocked={blocked} reducedMotion={reducedMotion} />
-        </section>
-
-        <DecisionPanel row={selectedRow} number={selectedNumber} />
+        </div>
+        <div className="xl:col-span-4">
+          <DecisionPanel
+            row={selectedRow}
+            number={selectedNumber}
+            onClose={pinned ? () => room.setSelected(null) : undefined}
+            className="xl:sticky xl:top-[92px]"
+          />
+        </div>
       </main>
-
-      <FooterLine rows={rows} loading={loading} />
     </div>
   );
 }

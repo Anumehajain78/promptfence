@@ -1,13 +1,13 @@
 import Link from "next/link";
+import { Logo } from "@/components/site/Logo";
 import { SectionNav } from "./SectionNav";
 import { DASHBOARD, PAGE_X } from "./ui";
 
 export function SiteHeader() {
   return (
     <header className={`sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 bg-paper py-3.5 ${PAGE_X}`}>
-      <a href="#top" aria-label="PromptFence home" className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.02em] text-ink no-underline">
-        <span aria-hidden className="block h-[18px] w-0.5 bg-ink" />
-        PromptFence
+      <a href="#top" aria-label="PromptFence home" className="text-ink no-underline transition-[color,opacity] duration-300 hover:opacity-70">
+        <Logo />
       </a>
       {/* One nav: inline from md up, a scrollable second row on phones. */}
       <SectionNav className="order-last w-full md:order-none md:w-auto" />

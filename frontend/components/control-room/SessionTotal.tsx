@@ -49,18 +49,18 @@ export function SessionTotal({ value, limit, blocked, reducedMotion }: Props) {
   }, [blocked, reducedMotion]);
 
   return (
-    <div className="mt-auto pt-[18px]">
+    <>
       <div
         aria-live="polite"
-        className={`font-mono text-[clamp(40px,4.4vw,76px)] font-medium leading-none tracking-[-0.03em] tabular-nums ${
-          blocked ? "text-deny" : "text-ink"
+        className={`mt-2 font-mono text-[clamp(38px,3.5vw,64px)] font-medium leading-[0.95] tracking-[-0.04em] tabular-nums transition-colors duration-300 ${
+          blocked ? "text-deny-fill" : "text-ink"
         } ${shaking ? "animate-pf-shake" : ""}`}
       >
         {inr(shown)}
       </div>
-      <div className="mt-2 text-sm text-grey-500">
-        of <span className="font-mono text-grey-700">{inr(limit)}</span> policy limit
-      </div>
-    </div>
+      <p className="m-0 mt-2.5 text-[16px] text-grey-700">
+        of <span className={`font-mono ${blocked ? "text-deny-fill" : "text-ink"}`}>{inr(limit)}</span> policy limit
+      </p>
+    </>
   );
 }
