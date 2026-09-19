@@ -1,3 +1,4 @@
+import { Logo } from "@/components/site/Logo";
 import { Reveal } from "./Reveal";
 import { DASHBOARD, DASHBOARD_ATTACK, Display, Kicker, PAGE_X, PrimaryLink, SecondaryLink, StopMark } from "./ui";
 
@@ -47,11 +48,8 @@ export function Close() {
             </SecondaryLink>
           </div>
         </Reveal>
-        <footer className="mt-[clamp(28px,min(3.6vw,5.5vh),60px)] flex flex-wrap justify-between gap-4 border-t border-grey-700 pt-5 text-[13px] text-grey-400">
-          <span className="flex items-center gap-2.5 text-paper">
-            <span aria-hidden className="block h-3.5 w-0.5 bg-paper" />
-            PromptFence
-          </span>
+        <footer className="mt-[clamp(28px,min(3.6vw,5.5vh),60px)] flex flex-wrap items-center justify-between gap-4 border-t border-grey-700 pt-5 text-[13px] text-grey-400">
+          <Logo className="text-paper" />
           <span>AI can reason. PromptFence decides.</span>
           <span>Cedar · DynamoDB · EventBridge</span>
         </footer>
