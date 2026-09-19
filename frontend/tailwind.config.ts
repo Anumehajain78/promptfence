@@ -5,16 +5,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        paper: "#F7F8F4",
-        ink: "#141413",
+        // Neutrals are CSS variables (values in app/globals.css) so the landing page can cross-fade its
+        // whole theme, light to dark and back, by flipping one class. Light values are the defaults.
+        paper: "var(--c-paper)", // #F7F8F4
+        ink: "var(--c-ink)", // #141413
         grey: {
-          700: "#3B3E38", // body
-          500: "#6E726A", // labels
-          400: "#8A8E84", // chart steps, secondary display
-          300: "#A6AA9F",
-          250: "#C2C5BC",
-          200: "#D6D9CF", // hairline
-          100: "#E6E8E0", // row rule
+          700: "var(--c-grey-700)", // #3B3E38 body
+          500: "var(--c-grey-500)", // #6E726A labels
+          400: "var(--c-grey-400)", // #8A8E84 chart steps, secondary display
+          300: "var(--c-grey-300)", // #A6AA9F
+          250: "var(--c-grey-250)", // #C2C5BC
+          200: "var(--c-grey-200)", // #D6D9CF hairline
+          100: "var(--c-grey-100)", // #E6E8E0 row rule
         },
         // Control Room surface tints from the design spec sheet (not in the landing palette).
         tint: {

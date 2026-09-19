@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { SmoothScroll } from "@/components/landing/SmoothScroll";
+import { SmoothScroll } from "@/components/site/SmoothScroll";
 import "./globals.css";
 
 const geist = Geist({

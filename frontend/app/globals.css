@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The neutral palette (tailwind.config.ts maps paper, ink and the greys onto these variables).
+   Registered as <color> so a change of value can be transitioned on the element
+   that declares it, and everything that reads the variable fades with it, in step. */
+@property --c-paper { syntax: "<color>"; inherits: true; initial-value: #f7f8f4; }
+@property --c-ink { syntax: "<color>"; inherits: true; initial-value: #141413; }
+@property --c-grey-700 { syntax: "<color>"; inherits: true; initial-value: #3b3e38; }
+@property --c-grey-500 { syntax: "<color>"; inherits: true; initial-value: #6e726a; }
+@property --c-grey-400 { syntax: "<color>"; inherits: true; initial-value: #8a8e84; }
+@property --c-grey-300 { syntax: "<color>"; inherits: true; initial-value: #a6aa9f; }
+@property --c-grey-250 { syntax: "<color>"; inherits: true; initial-value: #c2c5bc; }
+@property --c-grey-200 { syntax: "<color>"; inherits: true; initial-value: #d6d9cf; }
+@property --c-grey-100 { syntax: "<color>"; inherits: true; initial-value: #e6e8e0; }
+
+:root,
+.pf-theme-lock {
+  --c-paper: #f7f8f4;
+  --c-ink: #141413;
+  --c-grey-700: #3b3e38;
+  --c-grey-500: #6e726a;
+  --c-grey-400: #8a8e84;
+  --c-grey-300: #a6aa9f;
+  --c-grey-250: #c2c5bc;
+  --c-grey-200: #d6d9cf;
+  --c-grey-100: #e6e8e0;
+}
+
+/* Landing page theme (components/landing/ThemeFade.tsx adds .pf-theme-dark while the System section holds
+   the middle of the screen). Ground, type, rules and header all read these, so the whole page cross-fades.
+   .pf-theme-lock opts a subtree out: parts that are dark by design keep the light values. */
+.pf-theme {
+  transition:
+    --c-paper 0.7s ease,
+    --c-ink 0.7s ease,
+    --c-grey-700 0.7s ease,
+    --c-grey-500 0.7s ease,
+    --c-grey-400 0.7s ease,
+    --c-grey-300 0.7s ease,
+    --c-grey-250 0.7s ease,
+    --c-grey-200 0.7s ease,
+    --c-grey-100 0.7s ease;
+}
+
+.pf-theme-dark {
+  --c-paper: #000000;
+  --c-ink: #f7f8f4;
+  --c-grey-700: #c2c5bc;
+  --c-grey-500: #8a8e84;
+  --c-grey-400: #6e726a;
+  --c-grey-300: #4a4d46;
+  --c-grey-250: #3b3e38;
+  --c-grey-200: #2e302b;
+  --c-grey-100: #20221e;
+}
+
 @layer base {
   html {
     @apply bg-paper text-ink font-sans antialiased;
@@ -19,6 +73,43 @@
   :focus-visible {
     outline: 2px solid #141413;
     outline-offset: 2px;
+  }
+}
+
+/* Lenis (components/site/SmoothScroll.tsx) drives smooth scrolling and the header anchor glides.
+   Native smooth scrolling must stay off or the two fight over the scroll position. */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: clip;
+}
+
+/* Curly edge under the light page (components/landing/CurlyEdge.tsx): paper scallops, tiled.
+   Wider than the screen by four lobes so it can slide sideways without showing an end. */
+.pf-curly-edge {
+  --lobe: 72px;
+  height: 20px;
+  width: calc(100% + var(--lobe) * 4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M0 0H120V4A60 26 0 0 1 0 4Z' fill='%23F7F8F4'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size: var(--lobe) 100%;
+}
+
+@media (min-width: 768px) {
+  .pf-curly-edge {
+    --lobe: 120px;
+    height: 30px;
   }
 }
 
