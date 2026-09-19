@@ -22,3 +22,6 @@ __pycache__/
 # misc
 .DS_Store
 *.log
+
+# Design exports and working images stay local; they are not part of the repo.
+design/
